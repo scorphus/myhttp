@@ -62,6 +62,8 @@ http://debian.org ab590dac91d0850169462c9fad24c4d3
 
 ## Testing
 
+> **Note**: some tests fail with Go &lt; 1.14
+
 [Makefile](Makefile) also has targets to run tests:
 
 ```
