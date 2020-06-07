@@ -8,6 +8,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/md5"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -129,9 +130,11 @@ func TestDoGetPage(t *testing.T) {
 	}
 }
 
-func ExampleRequest() {
+func TestRequestConcurrently(t *testing.T) {
 	testCases := []struct {
-		urls []string
+		urls          []string
+		maxConcurrent uint64
+		succeeds      bool
 	}{
 		{
 			[]string{
@@ -140,6 +143,17 @@ func ExampleRequest() {
 				"http://coffeegeek.com",
 				"https://pabloaguiar.me",
 			},
+			4,
+			true,
+		}, {
+			[]string{
+				"https://www.formula1.com",
+				"https://www.mlb.com",
+				"http://coffeegeek.com",
+				"https://pabloaguiar.me",
+			},
+			4,
+			false,
 		}, {
 			[]string{
 				"https://github.com",
@@ -151,27 +165,92 @@ func ExampleRequest() {
 				"https://hub.docker.com",
 				"http://coffeegeek.com",
 			},
+			3,
+			true,
 		}, {
 			[]string{},
+			1,
+			true,
 		},
 	}
-	client := newClientOfMineWithHTTPClient(&http.Client{
-		Transport: roundTripper(roundTripperOfSuccess),
-	})
 	for _, testCase := range testCases {
-		client.request(testCase.urls, 1)
+		client := newClientOfMineWithHTTPClient(&http.Client{
+			Transport: roundTripper(roundTripperOfSuccess),
+		})
+		if !testCase.succeeds {
+			client.Transport = roundTripper(roundTripperOfFailure)
+		}
+		pageFeed := make(chan *pageResult, len(testCase.urls))
+		client.requestConcurrently(testCase.urls, testCase.maxConcurrent, pageFeed)
+		pageResults := map[string]*pageResult{}
+		for pageResult := range pageFeed {
+			pageResults[pageResult.url] = pageResult
+		}
+		for _, url := range testCase.urls {
+			pageResult, ok := pageResults[url]
+			if !ok {
+				t.Errorf("Expected a pageResult for %s", url)
+				continue
+			}
+			if !testCase.succeeds {
+				if pageResult.err == nil {
+					t.Errorf("Expected an erroneous pageResult for %s", url)
+				}
+				continue
+			}
+			data := md5.Sum([]byte("Response from " + url))
+			if pageResult.data != data {
+				t.Errorf("Got %x instead of %x for %s", pageResult.data, data, url)
+			}
+		}
+	}
+}
+
+func ExampleRequest() {
+	testCases := []struct {
+		urls     []string
+		succeeds bool
+	}{
+		{
+			[]string{
+				"https://www.formula1.com",
+				"https://www.mlb.com",
+				"http://coffeegeek.com",
+				"https://pabloaguiar.me",
+			},
+			true,
+		}, {
+			[]string{
+				"https://github.com",
+				"https://gitlab.com",
+				"https://hub.docker.com",
+				"https://www.manning.com",
+			},
+			false,
+		}, {
+			[]string{},
+			true,
+		},
+	}
+	for _, testCase := range testCases {
+		client := newClientOfMineWithHTTPClient(&http.Client{
+			Transport: roundTripper(roundTripperOfSuccess),
+		})
+		if !testCase.succeeds {
+			client.Transport = roundTripper(roundTripperOfFailure)
+		}
+		pageFeed := client.request(testCase.urls, 1)
+		for pageResult := range pageFeed {
+			fmt.Printf("%s\n", pageResult)
+		}
 	}
 	// Output:
 	// https://www.formula1.com a6bbc57376114596ddf51c4f9f7fdcb0
 	// https://www.mlb.com b6e7c2d493778a4c7662273355008762
 	// http://coffeegeek.com d75c56b4b08d69152f7bdd1b84e94abc
 	// https://pabloaguiar.me 2f4e55faf5ff25b6cd61d7d683375045
-	// https://github.com 742b2de0628c6160ab72f79e0588d3c0
-	// https://gitlab.com 64c178e48724f10785e70f47584d7fe4
-	// https://hub.docker.com aac7dd2fdb127a6a30cdfd3d8ccab131
-	// https://www.manning.com 499fd2ea7522318c1515c5a3c2572589
-	// https://www.mlb.com b6e7c2d493778a4c7662273355008762
-	// https://gitlab.com 64c178e48724f10785e70f47584d7fe4
-	// https://hub.docker.com aac7dd2fdb127a6a30cdfd3d8ccab131
-	// http://coffeegeek.com d75c56b4b08d69152f7bdd1b84e94abc
+	// https://github.com (Error: Get "https://github.com": some error)
+	// https://gitlab.com (Error: Get "https://gitlab.com": some error)
+	// https://hub.docker.com (Error: Get "https://hub.docker.com": some error)
+	// https://www.manning.com (Error: Get "https://www.manning.com": some error)
 }

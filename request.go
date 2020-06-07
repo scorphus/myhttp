@@ -51,9 +51,16 @@ func newPageResult(url string, data []byte, err error) *pageResult {
 	return &pageResult{url, md5.Sum(data), err} // keep in memory only the necessary bits
 }
 
-// request prepares the requests to run at a pace of maxConcurrent
+// request creates the pageFeed channel used to pipe pageResults into and dispatches the requests
+func (client *httpClient) request(urls []string, maxConcurrent uint64) chan *pageResult {
+	pageFeed := make(chan *pageResult, len(urls))
+	go client.requestConcurrently(urls, maxConcurrent, pageFeed)
+	return pageFeed
+}
+
+// requestConcurrently prepares the requests to run at a pace of maxConcurrent
 // at a time and pipes each pageResult into the pageFeed channel
-func (client *httpClient) request(urls []string, maxConcurrent uint64) {
+func (client *httpClient) requestConcurrently(urls []string, maxConcurrent uint64, pageFeed chan *pageResult) {
 	wg := sync.WaitGroup{}
 	wg.Add(len(urls))
 	pacer := make(chan struct{}, maxConcurrent)
@@ -62,10 +69,11 @@ func (client *httpClient) request(urls []string, maxConcurrent uint64) {
 		go func(url string) {
 			defer wg.Done()
 			defer func() { <-pacer }()
-			fmt.Println(client.doGetPage(url)) // TODO: print elsewhere (e.g. pipe it into a channel)
+			pageFeed <- client.doGetPage(url)
 		}(url)
 	}
 	wg.Wait()
+	close(pageFeed)
 }
 
 // doGetPage dispatches the request and converts the response into a pageResult

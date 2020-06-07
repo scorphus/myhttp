@@ -7,6 +7,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 )
@@ -19,5 +20,8 @@ func main() {
 		os.Exit(1)
 	}
 	client := newClientOfMine()
-	client.request(urls, parallel)
+	pageFeed := client.request(urls, parallel)
+	for pageResult := range pageFeed {
+		fmt.Printf("%s\n", pageResult)
+	}
 }
