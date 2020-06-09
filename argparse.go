@@ -14,12 +14,20 @@ import (
 	"strings"
 )
 
-func parseArguments() (uint64, []string, error) {
+func parseArguments(maxParallel uint64) (uint64, []string, error) {
 	parallel := flag.Uint64("parallel", 10, "limit the number of parallel requests")
 	flag.Usage = usage
 	flag.Parse()
 	if (*parallel) < 1 {
 		return 0, nil, fmt.Errorf(`invalid value "%d" for flag -parallel`, (*parallel))
+	}
+	if (*parallel) > maxParallel {
+		log.Printf(
+			`Warning: value "%d" for flag -parallel is too big, using default max %d`,
+			(*parallel),
+			maxParallel,
+		)
+		parallel = &maxParallel
 	}
 	urls, err := parseURLs()
 	return *parallel, urls, err

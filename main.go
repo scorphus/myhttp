@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	parallel, urls, err := parseArguments()
+	parallel, urls, err := parseArguments(getMaxParallel())
 	if err != nil {
 		log.Printf("Error: %s\n", err)
 		usage()
